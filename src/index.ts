@@ -146,30 +146,31 @@ async function awaitCommandCompletion(
   let command;
   let attempts = 0;
   while (attempts < maxAttempts) {
-    try{
-    command = await client.devboxes.executions.retrieve(
-      devbox_id!,
-      execution_id!
-    );
+    try {
+      command = await client.devboxes.executions.retrieve(
+        devbox_id!,
+        execution_id!
+      );
 
-    await ghIssueComment(
-      `Command ${execution_id} status: ${command.status} exit: ${command.exit_status} attempt: ${
-        attempts + 1
-      }`,
-      context
-    );
-    if (command.status === "completed") {
-      return command;
+      await ghIssueComment(
+        `Command ${execution_id} status: ${command.status} exit: ${
+          command.exit_status
+        } attempt: ${attempts + 1}`,
+        context
+      );
+      if (command.status === "completed") {
+        return command;
+      }
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    } catch (e) {
+      await ghIssueComment(
+        `Command (${execution_id}) failed because of the following error: \n\`\`\`${e}\`\`\``,
+        context
+      );
+      console.error("Error During Completion:", e);
+      throw e;
     }
-    attempts++;
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
-  } catch (e) {
-    await ghIssueComment(
-      `Command (${execution_id}) failed because of the following error: \n\`\`\`${e}\`\`\``,
-      context
-    );
-    console.error("RunloopError:", e);
-    return;
   }
   throw new Error(
     `Command ${execution_id} did not complete after ${maxAttempts} attempts`

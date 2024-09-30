@@ -8,6 +8,53 @@ client.bearerToken;
 console.log(`RLKEY (${client.bearerToken}):`, process.env.RUNLOOP_KEY);
 
 export default (app: Probot) => {
+  app.on("issues.closed", async (context) => {
+    ghIssueComment(
+      `Thanks for closing this issue! I will now delete the devbox associated with it.`,
+      context
+    );
+    // Get all comments on the issue
+    const comments = await context.octokit.issues.listComments({
+      ...context.issue(),
+    });
+
+    comments.data.forEach(async (comment) => {
+      // Regular expression to capture the devbox ID
+      const regex = /Devbox 🤖 created with ID: \[(dbx_[a-zA-Z0-9]+)\]/;
+      if (!comment.body) return;
+
+      const match = comment.body.match(regex);
+      console.log(`Comment ${match?.length}:`, comment.body);
+      if (match) {
+        const devboxID = match[1]; // The first capture group contains the ID
+        console.log("Devbox ID:", devboxID); // Outputs: Devbox ID: 12345
+        if (devboxID) {
+          try {
+            await ghIssueComment(
+              `Your devbox \`${devboxID}\` is being deleted.`,
+              context
+            );
+            await client.devboxes.shutdown(devboxID);
+
+            await ghIssueComment(
+              `Your devbox \`${devboxID}\` has been deleted.`,
+              context
+            );
+            console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
+          } catch (e) {
+            ghIssueComment(
+              `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
+              context
+            );
+            console.error("RunloopError:", e);
+          }
+        }
+      } else {
+        console.log("No devbox ID found in comment:", comment.body_text);
+      }
+    });
+  });
+
   app.on("issues.opened", async (context) => {
     await ghIssueComment(
       `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
@@ -49,14 +96,14 @@ export default (app: Probot) => {
       });
 
       await ghIssueComment(
-        `Your devbox \`${devbox.id}\` is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy! Attempting to put the code on it.`,
+        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy! Attempting to put the code on it.`,
         context
       );
       // setTimeout(async () => {
       //   await client.devboxes.executeAsync(devbox.id, {
       //     code: `echo 'Hello, World ${context.payload.issue.number}'`,
       // }, 5000);
-      console.log(`Devbox 🤖 created with ID: ${devbox.id}`);
+      console.log(`Devbox 🤖 created with ID: [${devbox.id}]`);
     } catch (e) {
       await ghIssueComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,

@@ -81,29 +81,36 @@ export default (app: Probot) => {
         setup_commands: [
           `echo 'Hello, World ${context.payload.issue.number}'`,
           `git clone ${context.payload.repository.clone_url}`,
-          `cd ${context.payload.repository.name}`,
-          `ls -la`,
-          `npm i && npm run build`,
-          `node lib/treesitter.js src/index.ts ast-${context.payload.repository.full_name}.json`,
-          `cat ast-${context.payload.repository.full_name}.json`,
         ],
-        // code_mounts: [
-        //   {
-        //     repository: "https://github.com/runloopai/rl-cli",
-        //     path: "/home/user/runloop"
-        //   }
-        // ]
       });
+
+      await awaitDevboxReady(devbox.id!, 10, 1000);
 
       await ghIssueComment(
         `Devbox 🤖 created with ID: [${devbox.id}] is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy! Attempting to put the code on it.`,
         context
       );
-      // setTimeout(async () => {
-      //   await client.devboxes.executeAsync(devbox.id, {
-      //     code: `echo 'Hello, World ${context.payload.issue.number}'`,
-      // }, 5000);
-      console.log(`Devbox 🤖 created with ID: [${devbox.id}]`);
+
+      await client.devboxes.executeAsync(devbox.id!, {
+        command: `echo "Hello, World $GITHUB_ISSUE_NUMBER"`,
+        shell_name: "bash",
+      });
+
+      await client.devboxes.executeAsync(devbox.id!, {
+        command: `cd ${context.payload.repository.name}`,
+        shell_name: "bash",
+      });
+
+      await client.devboxes.executeAsync(devbox.id!, {
+        command: `npm i && npm run build`,
+        shell_name: "bash",
+      });
+
+      const result = await client.devboxes.executeAsync(devbox.id!, {
+        command: `npm run test`,
+        shell_name: "bash",
+      });
+      await ghIssueComment("Test results: \n" + result.stdout, context);
     } catch (e) {
       await ghIssueComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,
@@ -114,6 +121,28 @@ export default (app: Probot) => {
     }
   });
 };
+
+async function awaitDevboxReady(
+  devboxID: string,
+  maxAttempts = 10,
+  pollInterval = 1000
+) {
+  let devbox;
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    devbox = await client.devboxes.retrieve(devboxID);
+    console.log(`Devbox ${devboxID} status: ${devbox.status}`);
+    if (devbox.status === "running") {
+      console.log(`Devbox ${devboxID} is running`);
+      return devbox;
+    }
+    attempts++;
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+  throw new Error(
+    `Devbox ${devboxID} did not start after ${maxAttempts} attempts`
+  );
+}
 
 async function ghIssueComment(body: string, context: any) {
   return context.octokit.issues.createComment({

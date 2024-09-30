@@ -19,7 +19,7 @@ export function ASTForFile(fileName: string): string {
   parser.setLanguage(language);
   const source = readFileSync(fileName, "utf8");
   const result = parser.parse(source);
-  return JSON.stringify(result.rootNode, null, 2);
+  return JSON.stringify(result.rootNode.tree, null, 2);
 }
 
 export function ASTForFileToFile(fileName: string, writeASTToFile: string) {

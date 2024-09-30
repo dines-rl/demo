@@ -117,7 +117,8 @@ export default (app: Probot) => {
         await client.devboxes.executeAsync(devbox.id!, {
           command: `npm run test`,
           shell_name: "bash",
-        })
+        }),
+        context
       );
 
       await ghIssueComment(
@@ -138,6 +139,7 @@ export default (app: Probot) => {
 
 async function awaitCommandCompletion(
   { execution_id, devbox_id }: DevboxAsyncExecutionDetailView,
+  context: any,
   maxAttempts = 30,
   pollInterval = 3000
 ) {
@@ -147,6 +149,13 @@ async function awaitCommandCompletion(
     command = await client.devboxes.executions.retrieve(
       devbox_id!,
       execution_id!
+    );
+
+    await ghIssueComment(
+      `Command ${execution_id} status: ${command.status} Attempt: ${
+        attempts + 1
+      }`,
+      context
     );
     if (command.status === "completed") {
       return command;

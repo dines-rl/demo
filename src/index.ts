@@ -140,19 +140,20 @@ export default (app: Probot) => {
 async function awaitCommandCompletion(
   { execution_id, devbox_id }: DevboxAsyncExecutionDetailView,
   context: any,
-  maxAttempts = 30,
-  pollInterval = 3000
+  maxAttempts = 50,
+  pollInterval = 1000
 ) {
   let command;
   let attempts = 0;
   while (attempts < maxAttempts) {
+    try{
     command = await client.devboxes.executions.retrieve(
       devbox_id!,
       execution_id!
     );
 
     await ghIssueComment(
-      `Command ${execution_id} status: ${command.status} Attempt: ${
+      `Command ${execution_id} status: ${command.status} exit: ${command.exit_status} attempt: ${
         attempts + 1
       }`,
       context
@@ -160,7 +161,15 @@ async function awaitCommandCompletion(
     if (command.status === "completed") {
       return command;
     }
+    attempts++;
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  } catch (e) {
+    await ghIssueComment(
+      `Command (${execution_id}) failed because of the following error: \n\`\`\`${e}\`\`\``,
+      context
+    );
+    console.error("RunloopError:", e);
+    return;
   }
   throw new Error(
     `Command ${execution_id} did not complete after ${maxAttempts} attempts`

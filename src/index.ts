@@ -1,4 +1,4 @@
-import { Probot } from "probot";
+import { Probot, Context } from "probot";
 import { Runloop } from "@runloop/api-client";
 import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
 
@@ -10,7 +10,11 @@ console.log(`RLKEY (${client.bearerToken}):`, process.env.RUNLOOP_KEY);
 
 export default (app: Probot) => {
   app.on("pull_request.closed", async (context) => {
-    ghIssueComment(
+    context.octokit.pulls.createReviewComment({
+      ...context.pullRequest(),
+      body: "Thanks for closing this PR!",
+    });
+    ghPRComment(
       `Thanks for closing this issue! I will now delete the devbox associated with it.`,
       context
     );
@@ -30,19 +34,19 @@ export default (app: Probot) => {
         console.log("Devbox ID:", devboxID); // Outputs: Devbox ID: 12345
         if (devboxID) {
           try {
-            await ghIssueComment(
+            await ghPRComment(
               `Your devbox \`${devboxID}\` is being deleted.`,
               context
             );
             await client.devboxes.shutdown(devboxID);
 
-            await ghIssueComment(
+            await ghPRComment(
               `Your devbox \`${devboxID}\` has been deleted.`,
               context
             );
             console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
           } catch (e) {
-            ghIssueComment(
+            ghPRComment(
               `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
               context
             );
@@ -53,8 +57,14 @@ export default (app: Probot) => {
     });
   });
 
-  app.on("pull_request.opened", async (context) => {
-    await ghIssueComment(
+  app.on("pull_request.opened", (context) => { pullRequestOpened(context) });
+
+  app.on("pull_request.reopened", (context)=>{ pullRequestOpened(context) });
+
+
+  async function pullRequestOpened (context: Context<"pull_request.opened"| "pull_request.reopened">
+  ) {
+    await ghPRComment(
       `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
       context
     );
@@ -91,7 +101,7 @@ export default (app: Probot) => {
 
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
-      await ghIssueComment(
+      await ghPRComment(
         `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
         context
       );
@@ -106,13 +116,13 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      await ghIssueComment(`Installing and building`, context);
+      await ghPRComment(`Installing and building`, context);
       await client.devboxes.executeSync(devbox.id!, {
         command: `npm i && npm run build`,
         shell_name: "bash",
       });
 
-      await ghIssueComment(`Running vite test`, context);
+      await ghPRComment(`Running vite test`, context);
       const result = //await awaitCommandCompletion(
         await client.devboxes.executeSync(devbox.id!, {
           command: `npm run test`,
@@ -121,13 +131,13 @@ export default (app: Probot) => {
       //context
       //);
 
-      await ghIssueComment(
+      await ghPRComment(
         `\#\#\# Test results
         \n\`\`\`${result.stdout}\`\`\``,
         context
       );
     } catch (e) {
-      await ghIssueComment(
+      await ghPRComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,
         context
       );
@@ -152,7 +162,7 @@ async function awaitCommandCompletion(
         execution_id!
       );
 
-      await ghIssueComment(
+      await ghPRComment(
         `Command ${execution_id} status: ${command.status} exit: ${
           command.exit_status
         } attempt: ${attempts + 1}: \n\`\`\`${command.stdout}\`\`\``,
@@ -164,7 +174,7 @@ async function awaitCommandCompletion(
       attempts++;
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     } catch (e) {
-      await ghIssueComment(
+      await ghPRComment(
         `Command (${execution_id}) failed because of the following error: \n\`\`\`${e}\`\`\``,
         context
       );
@@ -193,7 +203,7 @@ async function awaitDevboxReady(
       return devbox;
     }
 
-    await ghIssueComment(
+    await ghPRComment(
       `Awaiting Devbox status: ${devbox.status} attempt: ${attempts + 1}`,
       context
     );
@@ -205,9 +215,9 @@ async function awaitDevboxReady(
   );
 }
 
-async function ghIssueComment(body: string, context: any) {
-  return context.octokit.issues.createComment({
-    ...context.issue({ body: body }),
+async function ghPRComment(body: string, context: any) {
+  return context.octokit.pulls.createReviewComment({
+    ...context.pull_request,
     body,
   });
 }

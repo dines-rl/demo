@@ -10,51 +10,39 @@ console.log(`RLKEY (${client.bearerToken}):`, process.env.RUNLOOP_KEY);
 
 export default (app: Probot) => {
   app.on("pull_request.closed", async (context) => {
-    context.octokit.pulls.createReviewComment({
-      ...context.pullRequest(),
-      body: "Thanks for closing this PR!",
-    });
     ghPRComment(
-      `Thanks for closing this issue! I will now delete the devbox associated with it.`,
+      `Thanks for closing this PR! I will now delete the devbox associated with it.`,
       context
     );
-    // Get all comments on the issue
-    const comments = await context.octokit.issues.listComments({
-      ...context.issue(),
-    });
 
-    comments.data.forEach(async (comment) => {
-      // Regular expression to capture the devbox ID
-      const regex = /Devbox 🤖 created with ID: \[(dbx_[a-zA-Z0-9]+)\]/;
-      if (!comment.body) return;
-
-      const match = comment.body.match(regex);
-      if (match) {
-        const devboxID = match[1]; // The first capture group contains the ID
-        console.log("Devbox ID:", devboxID); // Outputs: Devbox ID: 12345
-        if (devboxID) {
-          try {
-            await ghPRComment(
-              `Your devbox \`${devboxID}\` is being deleted.`,
-              context
-            );
-            await client.devboxes.shutdown(devboxID);
-
-            await ghPRComment(
-              `Your devbox \`${devboxID}\` has been deleted.`,
-              context
-            );
-            console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
-          } catch (e) {
-            ghPRComment(
-              `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
-              context
-            );
-            console.error("RunloopError:", e);
-          }
+    context.payload.pull_request.labels.forEach(async (label: any) => {
+      if (label.name.includes("devbox-")) {
+        const devboxID = label.name.split("-")[1];
+        try {
+          await ghPRComment(
+            `Your devbox \`${devboxID}\` is being deleted.`,
+            context
+          );
+          await client.devboxes.shutdown(devboxID);
+          await context.octokit.issues.removeLabel({
+            ...context.issue(),
+            labels: [`devbox-${devboxID}`],
+          });
+    
+          await ghPRComment(
+            `Your devbox \`${devboxID}\` has been deleted.`,
+            context
+          );
+          console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
+        } catch (e) {
+          ghPRComment(
+            `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
+            context
+          );
+          console.error("RunloopError:", e);
         }
       }
-    });
+    })
   });
 
   app.on("pull_request.opened", (context) => { pullRequestOpened(context) });
@@ -68,6 +56,14 @@ export default (app: Probot) => {
       `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
       context
     );
+
+    // Get the changed files under src folder
+    const files = await context.octokit.pulls.listFiles({
+      ...context.issue(),
+    });
+    files.data.filter((file) => file.filename.startsWith("src/"))
+
+    await ghPRComment(`Files to Improve: ${files.data.map((file) => file.filename).join(", ")}`, context);
 
     try {
       let devbox = await client.devboxes.create({
@@ -215,9 +211,16 @@ async function awaitDevboxReady(
   );
 }
 
-async function ghPRComment(body: string, context: any) {
-  return context.octokit.pulls.createReviewComment({
-    ...context.pull_request,
-    body,
+// async function ghPRComment(body: string, context: Context<"pull_request">) {
+//   return context.octokit.pulls.createReviewComment({
+//     ...context.p,
+//     body,
+//   });
+// }
+
+async function ghPRComment(body: string, context: Context<"pull_request.opened" | "pull_request.reopened" | "pull_request.closed">) {
+  const actionDetails = context.pullRequest();
+  return context.octokit.issues.createComment({
+    ...context.issue({ owner: actionDetails.owner, repo: actionDetails.repo, issue_number: actionDetails.pull_number, body: body }),
   });
 }

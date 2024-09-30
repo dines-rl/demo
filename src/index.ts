@@ -3,7 +3,7 @@ import { Runloop } from "@runloop/api-client";
 import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
 
 const client = new Runloop({
-  bearerToken: process.env.RUNLOOP_KEY,
+  bearerToken: process.env.RUNLOOP_KEY || "",
 });
 client.bearerToken;
 console.log(`RLKEY (${client.bearerToken}):`, process.env.RUNLOOP_KEY);
@@ -25,7 +25,6 @@ export default (app: Probot) => {
       if (!comment.body) return;
 
       const match = comment.body.match(regex);
-      console.log(`Comment ${match?.length}:`, comment.body);
       if (match) {
         const devboxID = match[1]; // The first capture group contains the ID
         console.log("Devbox ID:", devboxID); // Outputs: Devbox ID: 12345
@@ -50,8 +49,6 @@ export default (app: Probot) => {
             console.error("RunloopError:", e);
           }
         }
-      } else {
-        console.log("No devbox ID found in comment:", comment.body_text);
       }
     });
   });
@@ -88,10 +85,10 @@ export default (app: Probot) => {
       // Add a label to the issue
       await context.octokit.issues.addLabels({
         ...context.issue(),
-        labels: [`devbox-${devbox.id}`],
+        labels: [`devbox-${devbox.id}`, "runloop"],
       });
 
-      await awaitDevboxReady(devbox.id!, 10, 1000);
+      await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
       await ghIssueComment(
         `Devbox 🤖 created with ID: [${devbox.id}] is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy! Attempting to put the code on it.`,
@@ -113,17 +110,17 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      const result = await awaitCommandCompletion(
-        await client.devboxes.executeAsync(devbox.id!, {
+      const result = //await awaitCommandCompletion(
+        await client.devboxes.executeSync(devbox.id!, {
           command: `npm run test`,
           shell_name: "bash",
-        }),
-        context
-      );
+        });
+      //context
+      //);
 
       await ghIssueComment(
-        `===Test results
-      \`\`\`${result.stdout}\`\`\``,
+        `\#\#\# Test results
+        \n\`\`\`${result.stdout}\`\`\``,
         context
       );
     } catch (e) {
@@ -155,7 +152,7 @@ async function awaitCommandCompletion(
       await ghIssueComment(
         `Command ${execution_id} status: ${command.status} exit: ${
           command.exit_status
-        } attempt: ${attempts + 1}`,
+        } attempt: ${attempts + 1}: \n\`\`\`${command.stdout}\`\`\``,
         context
       );
       if (command.status === "completed") {
@@ -179,6 +176,7 @@ async function awaitCommandCompletion(
 
 async function awaitDevboxReady(
   devboxID: string,
+  context: any,
   maxAttempts = 10,
   pollInterval = 1000
 ) {
@@ -191,6 +189,11 @@ async function awaitDevboxReady(
       console.log(`Devbox ${devboxID} is running`);
       return devbox;
     }
+
+    await ghIssueComment(
+      `Awaiting Devbox status: ${devbox.status} attempt: ${attempts + 1}`,
+      context
+    );
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }

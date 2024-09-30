@@ -2,7 +2,7 @@
   "compilerOptions": {
     "incremental": true,
     "target": "es2022",
-    "module": "Node16",
+    "module": "NodeNext",
     "declaration": true,
     "sourceMap": true,
     "outDir": "./dist",
@@ -15,8 +15,7 @@
     "noUnusedParameters": false,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-
-    "moduleResolution": "Node16",
+    "moduleResolution": "NodeNext",
     "esModuleInterop": true,
     "skipLibCheck": true,
 

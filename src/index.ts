@@ -91,25 +91,27 @@ export default (app: Probot) => {
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
       await ghIssueComment(
-        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
+        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
         context
       );
 
-      await client.devboxes.executeAsync(devbox.id!, {
+      await client.devboxes.executeSync(devbox.id!, {
         command: `echo "Hello, World $GITHUB_ISSUE_NUMBER"`,
         shell_name: "bash",
       });
 
-      await client.devboxes.executeAsync(devbox.id!, {
+      await client.devboxes.executeSync(devbox.id!, {
         command: `cd ${context.payload.repository.name}`,
         shell_name: "bash",
       });
 
-      await client.devboxes.executeAsync(devbox.id!, {
+      await ghIssueComment(`Installing and building`, context);
+      await client.devboxes.executeSync(devbox.id!, {
         command: `npm i && npm run build`,
         shell_name: "bash",
       });
 
+      await ghIssueComment(`Running vite test`, context);
       const result = //await awaitCommandCompletion(
         await client.devboxes.executeSync(devbox.id!, {
           command: `npm run test`,

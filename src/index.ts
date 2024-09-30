@@ -1,5 +1,6 @@
 import { Probot } from "probot";
-import Runloop from "@runloop/api-client";
+import { Runloop } from "@runloop/api-client";
+import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
 
 const client = new Runloop({
   bearerToken: process.env.RUNLOOP_KEY,
@@ -84,6 +85,12 @@ export default (app: Probot) => {
         ],
       });
 
+      // Add a label to the issue
+      await context.octokit.issues.addLabels({
+        ...context.issue(),
+        labels: [`devbox-${devbox.id}`],
+      });
+
       await awaitDevboxReady(devbox.id!, 10, 1000);
 
       await ghIssueComment(
@@ -106,10 +113,13 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      const result = await client.devboxes.executeAsync(devbox.id!, {
-        command: `npm run test`,
-        shell_name: "bash",
-      });
+      const result = await awaitCommandCompletion(
+        await client.devboxes.executeAsync(devbox.id!, {
+          command: `npm run test`,
+          shell_name: "bash",
+        })
+      );
+
       await ghIssueComment(
         `===Test results
       \`\`\`${result.stdout}\`\`\``,
@@ -125,6 +135,28 @@ export default (app: Probot) => {
     }
   });
 };
+
+async function awaitCommandCompletion(
+  { execution_id, devbox_id }: DevboxAsyncExecutionDetailView,
+  maxAttempts = 30,
+  pollInterval = 3000
+) {
+  let command;
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    command = await client.devboxes.executions.retrieve(
+      devbox_id!,
+      execution_id!
+    );
+    if (command.status === "completed") {
+      return command;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+  throw new Error(
+    `Command ${execution_id} did not complete after ${maxAttempts} attempts`
+  );
+}
 
 async function awaitDevboxReady(
   devboxID: string,

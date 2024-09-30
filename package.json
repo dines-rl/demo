@@ -21,7 +21,10 @@
   },
   "dependencies": {
     "@runloop/api-client": "0.1.0-alpha.25",
-    "probot": "^13.0.1"
+    "probot": "^13.0.1",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-javascript": "^0.23.0",
+    "tree-sitter-typescript": "^0.23.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

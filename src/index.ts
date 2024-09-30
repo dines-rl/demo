@@ -14,11 +14,11 @@ export default (app: Probot) => {
       context
     );
 
-    let devbox;
     try {
-      devbox = await client.devboxes.create({
+      let devbox = await client.devboxes.create({
+        name: `Issue-${context.payload.issue.number}`,
         launch_parameters: {
-          keep_alive_time_seconds: 5 * 60,
+          keep_alive_time_seconds: 100 * 60,
         },
         environment_variables: {
           GITHUB_ISSUE_NUMBER: context.payload.issue.number.toString(),
@@ -34,6 +34,11 @@ export default (app: Probot) => {
         setup_commands: [
           `echo 'Hello, World ${context.payload.issue.number}'`,
           `git clone ${context.payload.repository.clone_url}`,
+          `cd ${context.payload.repository.name}`,
+          `ls -la`,
+          `npm i && npm run build`,
+          `node lib/treesitter.js src/index.ts ast-${context.payload.repository.full_name}.json`,
+          `cat ast-${context.payload.repository.full_name}.json`,
         ],
         // code_mounts: [
         //   {
@@ -47,6 +52,11 @@ export default (app: Probot) => {
         `Your devbox \`${devbox.id}\` is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy! Attempting to put the code on it.`,
         context
       );
+      // setTimeout(async () => {
+      //   await client.devboxes.executeAsync(devbox.id, {
+      //     code: `echo 'Hello, World ${context.payload.issue.number}'`,
+      // }, 5000);
+      console.log(`Devbox 🤖 created with ID: ${devbox.id}`);
     } catch (e) {
       await ghIssueComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,
@@ -55,7 +65,6 @@ export default (app: Probot) => {
       console.error("RunloopError:", e);
       return;
     }
-    console.log(`Devbox 🤖 created with ID: ${devbox.id}`);
   });
 };
 

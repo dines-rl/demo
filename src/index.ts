@@ -110,7 +110,11 @@ export default (app: Probot) => {
         command: `npm run test`,
         shell_name: "bash",
       });
-      await ghIssueComment("Test results: \n" + result.stdout, context);
+      await ghIssueComment(
+        `===Test results
+      \`\`\`${result.stdout}\`\`\``,
+        context
+      );
     } catch (e) {
       await ghIssueComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,

@@ -91,7 +91,7 @@ export default (app: Probot) => {
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
       await ghIssueComment(
-        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy! Attempting to put the code on it.`,
+        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
         context
       );
 

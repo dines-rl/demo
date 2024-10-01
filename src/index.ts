@@ -213,9 +213,9 @@ export default (app: Probot) => {
             ...context.pullRequest(),
             path: gptResult.filename,
             commit_id: context.payload.pull_request.head.sha,
-            start_line: change.lineStart,
-            start_side: "RIGHT",
-            body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\`\`\``,
+            line: change.oldCodeLineStart,
+
+            body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
           });
 
           // await context.octokit.pulls.createReview({

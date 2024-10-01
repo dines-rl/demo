@@ -5,15 +5,12 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 
 const Change = z.object({
-  lineStart: z.number({
-    description:
-      "The starting line number of the change in the original code file.",
-  }),
   shortDescription: z.string({
     description: "A short description of the change. Suitable for a title",
   }),
   longDescription: z.string({
-    description: "A longer description of the change. Suitable for a body",
+    description:
+      "A longer description of the change. Suitable for an up to two to 8 sentence body explaining the reasoning behind the change.",
   }),
   oldCode: z.string({ description: "The original code (before the change)." }),
   newCode: z.string({ description: "The updated code (after the change)." }),
@@ -30,7 +27,7 @@ const CodeSuggestionsResult = z.object({
 });
 
 type Changes = {
-  lineStart: number;
+  oldCodeLineStart: number;
   shortDescription: string;
   longDescription: string;
   oldCode: string;
@@ -82,9 +79,24 @@ Make sure to output both files as requested.
     console.log("--------------------");
     console.log("Suggestions from GPT:", suggestion);
     console.log("--------------------");
+    if (!suggestion) {
+      console.error(completion.choices[0].message);
+      throw new Error("No suggestions received from GPT");
+    }
+    const result = {
+      changes: suggestion.changes.map((change) => ({
+        oldCodeLineStart: determineLineStart(code, change.oldCode),
+        shortDescription: change.shortDescription,
+        longDescription: change.longDescription,
+        oldCode: change.oldCode,
+        newCode: change.newCode,
+      })),
+      changed: suggestion.changedFileContents,
+      filename: filename,
+    };
 
-    if (suggestion) {
-      return { filename, ...suggestion };
+    if (result) {
+      return result;
     } else {
       throw new Error("No suggestions received from GPT");
     }
@@ -92,4 +104,16 @@ Make sure to output both files as requested.
     console.error("Error fetching suggestions from GPT:", error);
     throw error;
   }
+}
+
+// Helper function to determine the starting line number of the old code
+function determineLineStart(fullCode: string, oldCode: string): number {
+  const lines = fullCode.split("\n");
+  const oldCodeLines = oldCode.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (lines.slice(i, i + oldCodeLines.length).join("\n") === oldCode) {
+      return i + 1; // Line numbers are typically 1-based
+    }
+  }
+  return 0; // Return -1 if the old code is not found
 }

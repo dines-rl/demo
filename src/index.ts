@@ -1,6 +1,7 @@
 import { Probot, Context } from "probot";
 import { Runloop } from "@runloop/api-client";
 import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
+import { getSuggestionsFromGPT } from "./GetDiffForFile.js";
 
 const client = new Runloop({
   bearerToken: process.env.RUNLOOP_KEY || "",
@@ -10,62 +11,89 @@ console.log(`RLKEY (${client.bearerToken}):`, process.env.RUNLOOP_KEY);
 
 export default (app: Probot) => {
   app.on("pull_request.closed", async (context) => {
-    context.octokit.pulls.createReviewComment({
-      ...context.pullRequest(),
-      body: "Thanks for closing this PR!",
-    });
     ghPRComment(
-      `Thanks for closing this issue! I will now delete the devbox associated with it.`,
+      `Thanks for closing this PR! I will now delete the devbox associated with it.`,
       context
     );
-    // Get all comments on the issue
-    const comments = await context.octokit.issues.listComments({
-      ...context.issue(),
-    });
 
-    comments.data.forEach(async (comment) => {
-      // Regular expression to capture the devbox ID
-      const regex = /Devbox 🤖 created with ID: \[(dbx_[a-zA-Z0-9]+)\]/;
-      if (!comment.body) return;
+    context.payload.pull_request.labels.forEach(async (label: any) => {
+      if (label.name.includes("devbox-")) {
+        const devboxID = label.name.split("-")[1];
+        try {
+          await ghPRComment(
+            `Your devbox \`${devboxID}\` is being deleted.`,
+            context
+          );
+          await client.devboxes.shutdown(devboxID);
+          await context.octokit.issues.removeLabel({
+            ...context.issue(),
+            labels: [`devbox-${devboxID}`],
+          });
 
-      const match = comment.body.match(regex);
-      if (match) {
-        const devboxID = match[1]; // The first capture group contains the ID
-        console.log("Devbox ID:", devboxID); // Outputs: Devbox ID: 12345
-        if (devboxID) {
-          try {
-            await ghPRComment(
-              `Your devbox \`${devboxID}\` is being deleted.`,
-              context
-            );
-            await client.devboxes.shutdown(devboxID);
-
-            await ghPRComment(
-              `Your devbox \`${devboxID}\` has been deleted.`,
-              context
-            );
-            console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
-          } catch (e) {
-            ghPRComment(
-              `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
-              context
-            );
-            console.error("RunloopError:", e);
-          }
+          await ghPRComment(
+            `Your devbox \`${devboxID}\` has been deleted.`,
+            context
+          );
+          console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
+        } catch (e) {
+          ghPRComment(
+            `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
+            context
+          );
+          console.error("RunloopError:", e);
         }
       }
     });
   });
 
-  app.on("pull_request.opened", (context) => { pullRequestOpened(context) });
+  app.on("pull_request.opened", (context) => {
+    pullRequestOpened(context);
+  });
 
-  app.on("pull_request.reopened", (context)=>{ pullRequestOpened(context) });
+  app.on("pull_request.reopened", (context) => {
+    pullRequestOpened(context);
+  });
 
-
-  async function pullRequestOpened (context: Context<"pull_request.opened"| "pull_request.reopened">
+  async function pullRequestOpened(
+    context: Context<"pull_request.opened" | "pull_request.reopened">
   ) {
     await ghPRComment(
       `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
+      context
+    );
+
+    // Get the changed files under src folder
+    const files = await context.octokit.pulls.listFiles({
+      ...context.pullRequest(),
+    });
+    const srcFiles = files.data.filter((file) =>
+      file.filename.startsWith("src/")
+    );
+
+    // if (srcFiles.length > 0) {
+    //   const file = srcFiles[0];
+    //   const fileContent = await context.octokit.repos.getContent({
+    //     ...context.repo(),
+    //     filename: file.filename,
+    //     mediaType: { format: "text" },
+    //   });
+    //   await ghPRComment(
+    //     `File ${file.filename} content: ` + fileContent.data,
+    //     context
+    //   );
+
+    //   // Get the contents of a specific file
+    //   getSuggestionsFromGPT(
+    //     srcFiles[0].filename,
+    //     fileContent.data as string,
+    //     context
+    //   );
+    // }
+
+    await ghPRComment(
+      `Files to Improve: ${srcFiles
+        .map((file) => "`" + file.filename + "`")
+        .join(", ")}`,
       context
     );
 
@@ -89,7 +117,6 @@ export default (app: Probot) => {
         },
         setup_commands: [
           `echo 'Hello, World ${context.payload.pull_request.number}'`,
-          `git clone ${context.payload.repository.clone_url}`,
         ],
       });
 
@@ -102,12 +129,17 @@ export default (app: Probot) => {
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
       await ghPRComment(
-        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
+        `Devbox 🤖 created with ID: \`${devbox.id}\` is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}). 
+        \n We will now check out your repository and run tests on it.`,
         context
       );
 
+      await ghPRComment(
+        `Checking out repository \`${context.payload.repository.full_name}\``,
+        context
+      );
       await client.devboxes.executeSync(devbox.id!, {
-        command: `echo "Hello, World $GITHUB_ISSUE_NUMBER"`,
+        command: `git clone ${context.payload.repository.clone_url}`,
         shell_name: "bash",
       });
 
@@ -116,26 +148,104 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      await ghPRComment(`Installing and building`, context);
+      let fileNameCommand = await client.devboxes.executeSync(devbox.id!, {
+        command: `pwd`,
+        shell_name: "bash",
+      });
+      const currentWorkingDirectory = fileNameCommand.stdout?.trim();
+
+      await ghPRComment(
+        `Checking out branch ${context.payload.pull_request.head.ref}`,
+        context
+      );
       await client.devboxes.executeSync(devbox.id!, {
-        command: `npm i && npm run build`,
+        command: `git checkout ${context.payload.pull_request.head.ref}`,
         shell_name: "bash",
       });
 
-      await ghPRComment(`Running vite test`, context);
-      const result = //await awaitCommandCompletion(
-        await client.devboxes.executeSync(devbox.id!, {
-          command: `npm run test`,
-          shell_name: "bash",
-        });
-      //context
+      // await ghPRComment(`Installing and building`, context);
+      // await client.devboxes.executeSync(devbox.id!, {
+      //   command: `npm i && npm run build`,
+      //   shell_name: "bash",
+      // });
+
+      // await ghPRComment(`Running vite test`, context);
+      // const result = //await awaitCommandCompletion(
+      //   await client.devboxes.executeSync(devbox.id!, {
+      //     command: `npm run test`,
+      //     shell_name: "bash",
+      //   });
+      // //context
       //);
 
+      // await ghPRComment(
+      //   `\#\#\# Initial Test results
+      //   \n\`\`\`${result.stdout}\`\`\``,
+      //   context
+      // );
+
+      const absolutefilePath =
+        currentWorkingDirectory + "/" + srcFiles[0].filename;
+
       await ghPRComment(
-        `\#\#\# Test results
-        \n\`\`\`${result.stdout}\`\`\``,
+        `Reading filecontents: \`${absolutefilePath}\``,
         context
       );
+      const fileContents = await client.devboxes.readFileContents(devbox.id!, {
+        file_path: absolutefilePath,
+      });
+
+      const gptResult = await getSuggestionsFromGPT(
+        srcFiles[0].filename,
+        fileContents,
+        { temperature: 0.5 }
+      );
+
+      if (gptResult.changes.length === 0) {
+        await ghPRComment(
+          `Congradulations! No changes were suggested for the file ${gptResult.filename}`,
+          context
+        );
+      } else {
+        gptResult.changes.forEach(async (change) => {
+          console.log("Apply Change:", change);
+          await context.octokit.pulls.createReviewComment({
+            ...context.pullRequest(),
+            path: gptResult.filename,
+            commit_id: context.payload.pull_request.head.sha,
+            start_line: change.lineStart,
+            start_side: "RIGHT",
+            body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\`\`\``,
+          });
+
+          // await context.octokit.pulls.createReview({
+          //   ...context.pullRequest(),
+          //   event: "COMMENT",
+          //   body: `## Issue: ${change.shortDescription}\n\n${change.longDescription}`,
+          //   comments: [
+          //     {
+          //       path: srcFiles[0].filename,
+          //       position: change.lineStart,
+          //       body: `### Suggested Change\n\`\`\`suggestion\n${change.newCode}\`\`\``,
+          //     },
+          //   ],
+          // });
+          // //   if (change.newCode && change.lineStart && change.lineEnd) {
+          //     context.octokit.pulls.createReviewComment({
+          //       ...context.issue(),
+          //       start_line: change.lineStart,
+          //       side: "RIGHT",
+          //       start_side: "RIGHT",
+          //       end_line: change.lineEnd,
+          //       path: gptResult.filename,
+          //       body: `### Change Suggestion
+          // \n\`\`\`${gptResult.changed}\`\`\``,
+          //     });
+          //   }
+        });
+      }
+
+      await ghPRComment(`Done!`, context);
     } catch (e) {
       await ghPRComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,
@@ -144,7 +254,7 @@ export default (app: Probot) => {
       console.error("RunloopError:", e);
       return;
     }
-  });
+  }
 };
 
 async function awaitCommandCompletion(
@@ -215,9 +325,26 @@ async function awaitDevboxReady(
   );
 }
 
-async function ghPRComment(body: string, context: any) {
-  return context.octokit.pulls.createReviewComment({
-    ...context.pull_request,
-    body,
+// async function ghPRComment(body: string, context: Context<"pull_request">) {
+//   return context.octokit.pulls.createReviewComment({
+//     ...context.p,
+//     body,
+//   });
+// }
+
+async function ghPRComment(
+  body: string,
+  context: Context<
+    "pull_request.opened" | "pull_request.reopened" | "pull_request.closed"
+  >
+) {
+  const actionDetails = context.pullRequest();
+  return context.octokit.issues.createComment({
+    ...context.issue({
+      owner: actionDetails.owner,
+      repo: actionDetails.repo,
+      issue_number: actionDetails.pull_number,
+      body: body,
+    }),
   });
 }

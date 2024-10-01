@@ -1,0 +1,111 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GPTTest > extracts the file changes and reasoning from the ai 1`] = `
+{
+  "changed": "const GLOBAL_VALUE = 1; // Changed to uppercase for constant naming convention
+function addNumbers(a: number, b: number): number { // Renamed for clarity
+  return a + b;
+}",
+  "changes": [
+    {
+      "Line End": 1,
+      "Line Start": 1,
+      "Long Description": "Changed the variable name 'globalValue' to 'GLOBAL_VALUE' to follow the convention of using uppercase for constants.",
+      "New Code": "const GLOBAL_VALUE = 1;",
+      "Old Code": "const globalValue = 1;",
+      "Short Description": "Renamed constant to follow naming conventions",
+    },
+    {
+      "Line End": 2,
+      "Line Start": 2,
+      "Long Description": "Changed the function name from 'MyFunction' to 'addNumbers' to better describe its purpose.",
+      "New Code": "function addNumbers(a: number, b: number): number {",
+      "Old Code": "function MyFunction(a: number, b: number): number {",
+      "Short Description": "Renamed function for clarity",
+    },
+  ],
+  "filename": "test/fixtures/testJSTFile.ts",
+  "original": "\`\`\`changed
+const GLOBAL_VALUE = 1; // Changed to uppercase for constant naming convention
+function addNumbers(a: number, b: number): number { // Renamed for clarity
+  return a + b;
+}
+\`\`\`
+
+\`\`\`changes.json
+[
+    {
+        "Line Start": 1,
+        "Line End": 1,
+        "Short Description": "Renamed constant to follow naming conventions",
+        "Long Description": "Changed the variable name 'globalValue' to 'GLOBAL_VALUE' to follow the convention of using uppercase for constants.",
+        "Old Code": "const globalValue = 1;",
+        "New Code": "const GLOBAL_VALUE = 1;"
+    },
+    {
+        "Line Start": 2,
+        "Line End": 2,
+        "Short Description": "Renamed function for clarity",
+        "Long Description": "Changed the function name from 'MyFunction' to 'addNumbers' to better describe its purpose.",
+        "Old Code": "function MyFunction(a: number, b: number): number {",
+        "New Code": "function addNumbers(a: number, b: number): number {"
+    }
+]
+\`\`\`",
+}
+`;
+
+exports[`GPTTest > extracts the file changes and reasoning from the ai 2`] = `
+{
+  "changed": "const GLOBAL_VALUE = 1; // Changed to uppercase to follow constant naming conventions
+function myFunction(a: number, b: number): number { // Changed function name to camelCase
+  return a + b;
+}",
+  "changes": [
+    {
+      "Line End": 1,
+      "Line Start": 1,
+      "Long Description": "Changed the naming of the constant 'globalValue' to 'GLOBAL_VALUE' to follow the convention of using uppercase letters for constants.",
+      "New Code": "const GLOBAL_VALUE = 1;",
+      "Old Code": "const globalValue = 1;",
+      "Short Description": "Renamed constant to uppercase",
+    },
+    {
+      "Line End": 2,
+      "Line Start": 2,
+      "Long Description": "Changed the function name from 'MyFunction' to 'myFunction' to follow the JavaScript naming conventions for functions, which typically use camelCase.",
+      "New Code": "function myFunction(a: number, b: number): number {",
+      "Old Code": "function MyFunction(a: number, b: number): number {",
+      "Short Description": "Renamed function to camelCase",
+    },
+  ],
+  "filename": "test/fixtures/testJSTFile.ts",
+  "original": "\`\`\`changed
+const GLOBAL_VALUE = 1; // Changed to uppercase to follow constant naming conventions
+function myFunction(a: number, b: number): number { // Changed function name to camelCase
+  return a + b;
+}
+\`\`\`
+
+\`\`\`changes.json
+[
+    {
+        "Line Start": 1,
+        "Line End": 1,
+        "Short Description": "Renamed constant to uppercase",
+        "Long Description": "Changed the naming of the constant 'globalValue' to 'GLOBAL_VALUE' to follow the convention of using uppercase letters for constants.",
+        "Old Code": "const globalValue = 1;",
+        "New Code": "const GLOBAL_VALUE = 1;"
+    },
+    {
+        "Line Start": 2,
+        "Line End": 2,
+        "Short Description": "Renamed function to camelCase",
+        "Long Description": "Changed the function name from 'MyFunction' to 'myFunction' to follow the JavaScript naming conventions for functions, which typically use camelCase.",
+        "Old Code": "function MyFunction(a: number, b: number): number {",
+        "New Code": "function myFunction(a: number, b: number): number {"
+    }
+]
+\`\`\`",
+}
+`;

@@ -152,7 +152,7 @@ export default (app: Probot) => {
         command: `pwd`,
         shell_name: "bash",
       });
-      const currentWorkingDirectory = fileNameCommand.stdout;
+      const currentWorkingDirectory = fileNameCommand.stdout?.trim();
 
       await ghPRComment(
         `Checking out branch ${context.payload.pull_request.head.ref}`,
@@ -170,19 +170,19 @@ export default (app: Probot) => {
       });
 
       await ghPRComment(`Running vite test`, context);
-      const result = //await awaitCommandCompletion(
-        await client.devboxes.executeSync(devbox.id!, {
-          command: `npm run test`,
-          shell_name: "bash",
-        });
-      //context
+      // const result = //await awaitCommandCompletion(
+      //   await client.devboxes.executeSync(devbox.id!, {
+      //     command: `npm run test`,
+      //     shell_name: "bash",
+      //   });
+      // //context
       //);
 
-      await ghPRComment(
-        `\#\#\# Initial Test results
-        \n\`\`\`${result.stdout}\`\`\``,
-        context
-      );
+      // await ghPRComment(
+      //   `\#\#\# Initial Test results
+      //   \n\`\`\`${result.stdout}\`\`\``,
+      //   context
+      // );
 
       const absolutefilePath =
         currentWorkingDirectory + "/" + srcFiles[0].filename;
@@ -191,15 +191,21 @@ export default (app: Probot) => {
       const fileContents = await client.devboxes.readFileContents(devbox.id!, {
         file_path: absolutefilePath,
       });
-      await ghPRComment(`Contents: \n\`\`\`\n${fileContents}\n\'\'\'`, context);
+      //await ghPRComment(`Contents: \n\`\`\`\n${fileContents}\n\`\`\``, context);
 
       const gptResult = await getSuggestionsFromGPT(
         srcFiles[0].filename,
-        result.stdout as string,
+        fileContents,
         { temperature: 0.5, max_tokens: 1000 }
       );
       await ghPRComment(
-        `GPT Suggestions: \n\`\`\`\n${gptResult}\n\'\'\'`,
+        `### Bot 🤖 Suggestions 
+        We have generated some suggestions for you to improve the code:
+
+        \n\`\`\`\n${gptResult}\n\`\`\`
+        
+        What do you think, respond with your thoughts.
+        `,
         context
       );
     } catch (e) {

@@ -155,7 +155,7 @@ export default (app: Probot) => {
       const currentWorkingDirectory = fileNameCommand.stdout?.trim();
 
       await ghPRComment(
-        `Checking out branch ${context.payload.pull_request.head.ref}`,
+        `Checking out branch \`${context.payload.pull_request.head.ref}\``,
         context
       );
       await client.devboxes.executeSync(devbox.id!, {
@@ -163,26 +163,25 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      // await ghPRComment(`Installing and building`, context);
-      // await client.devboxes.executeSync(devbox.id!, {
-      //   command: `npm i && npm run build`,
-      //   shell_name: "bash",
-      // });
+      await ghPRComment(`Installing and building`, context);
+      await client.devboxes.executeSync(devbox.id!, {
+        command: `npm i && npm run build`,
+        shell_name: "bash",
+      });
 
-      // await ghPRComment(`Running vite test`, context);
-      // const result = //await awaitCommandCompletion(
-      //   await client.devboxes.executeSync(devbox.id!, {
-      //     command: `npm run test`,
-      //     shell_name: "bash",
-      //   });
-      // //context
-      //);
+      await ghPRComment(`Running vite test`, context);
+      const result = 
+        await client.devboxes.executeSync(devbox.id!, {
+          command: `npm run test`,
+          shell_name: "bash",
+        });
+      );
 
-      // await ghPRComment(
-      //   `\#\#\# Initial Test results
-      //   \n\`\`\`${result.stdout}\`\`\``,
-      //   context
-      // );
+      await ghPRComment(
+        `\#\#\# Initial Test results
+        \n\`\`\`${result.stdout}\`\`\``,
+        context
+      );
 
       const absolutefilePath =
         currentWorkingDirectory + "/" + srcFiles[0].filename;
@@ -199,6 +198,11 @@ export default (app: Probot) => {
         srcFiles[0].filename,
         fileContents,
         { temperature: 0.5 }
+      );
+
+      await ghPRComment(
+        `GPT Responded with \`${gptResult.changes.length}\` changes!`,
+        context
       );
 
       if (gptResult.changes.length === 0) {

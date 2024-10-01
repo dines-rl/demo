@@ -1,6 +1,6 @@
 
 export function CreateFarm(animals: string[]): string {
-  let farm = "";
+return animals.map(animal => `In our farm we have ${animal}, `).join('');
   for (let i = 0; i < animals.length; i++) {
     farm += `In our farm we have ${animals[i]}, `;
   }

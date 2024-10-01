@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { getSuggestionsFromGPT } from "../dist/GetDiffForFile.js";
 import fs from "fs";
-describe("GPTTest", () => {
-  test(
+describe.skip("GPTTest", () => {
+  test.skip(
     "extracts the file changes and reasoning from the ai",
     async () => {
       const filename = "test/fixtures/testJSTFile.ts";
@@ -42,7 +42,7 @@ describe("GPTTest", () => {
     { timeout: 200000 }
   );
 
-  test.only(
+  test.skip(
     "extracts a complicatedfile and reasoning from the ai",
     async () => {
       const filename = "src/GetDiffForFile.ts";

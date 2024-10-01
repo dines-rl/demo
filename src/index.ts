@@ -217,31 +217,6 @@ export default (app: Probot) => {
 
             body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
           });
-
-          // await context.octokit.pulls.createReview({
-          //   ...context.pullRequest(),
-          //   event: "COMMENT",
-          //   body: `## Issue: ${change.shortDescription}\n\n${change.longDescription}`,
-          //   comments: [
-          //     {
-          //       path: srcFiles[0].filename,
-          //       position: change.lineStart,
-          //       body: `### Suggested Change\n\`\`\`suggestion\n${change.newCode}\`\`\``,
-          //     },
-          //   ],
-          // });
-          // //   if (change.newCode && change.lineStart && change.lineEnd) {
-          //     context.octokit.pulls.createReviewComment({
-          //       ...context.issue(),
-          //       start_line: change.lineStart,
-          //       side: "RIGHT",
-          //       start_side: "RIGHT",
-          //       end_line: change.lineEnd,
-          //       path: gptResult.filename,
-          //       body: `### Change Suggestion
-          // \n\`\`\`${gptResult.changed}\`\`\``,
-          //     });
-          //   }
         });
       }
 

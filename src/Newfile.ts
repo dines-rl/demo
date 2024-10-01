@@ -1,4 +1,3 @@
-let global = 1;
 
 export function CreateFarm(animals: string[]): string {
   let farm = "";

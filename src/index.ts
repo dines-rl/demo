@@ -163,20 +163,20 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      await ghPRComment(`Installing and building`, context);
+      await ghPRComment(`Installing and building the repo`, context);
       await client.devboxes.executeSync(devbox.id!, {
         command: `npm i && npm run build`,
         shell_name: "bash",
       });
 
-      await ghPRComment(`Running vite test`, context);
+      await ghPRComment(`Running control vite test`, context);
       const result = await client.devboxes.executeSync(devbox.id!, {
         command: `npm run test`,
         shell_name: "bash",
       });
 
       await ghPRComment(
-        `\#\#\# Initial Test results
+        `\#\#\# Control Test results
         \n\`\`\`${result.stdout}\`\`\``,
         context
       );
@@ -184,10 +184,6 @@ export default (app: Probot) => {
       const absolutefilePath =
         currentWorkingDirectory + "/" + srcFiles[0].filename;
 
-      await ghPRComment(
-        `Reading filecontents: \`${absolutefilePath}\``,
-        context
-      );
       const fileContents = await client.devboxes.readFileContents(devbox.id!, {
         file_path: absolutefilePath,
       });
@@ -199,7 +195,11 @@ export default (app: Probot) => {
       );
 
       await ghPRComment(
-        `GPT Responded with \`${gptResult.changes.length}\` changes!`,
+        `GPT Responded with \`${
+          gptResult.changes.length
+        }\` changes! \n \`\`\`${gptResult.changes.map((change) => {
+          return change.shortDescription;
+        })}\n\`\`\``,
         context
       );
 
@@ -209,25 +209,66 @@ export default (app: Probot) => {
           context
         );
       } else {
-        gptResult.changes.forEach(async (change) => {
-          console.log("Apply Change:", change);
-          try {
-            await context.octokit.pulls.createReviewComment({
-              ...context.pullRequest(),
-              path: gptResult.filename,
-              commit_id: context.payload.pull_request.head.sha,
-              side: "RIGHT",
-              line: change.oldCodeLineStart,
-              body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
-            });
-          } catch (e) {
-            await ghPRComment(
-              `Failed to apply change because of the following error: \n\`\`\`${e}\`\`\``,
-              context
-            );
-            console.error("Error Applying Change:", e);
-          }
+        // Apply Changes
+        await ghPRComment(
+          `Applying changes to file ${gptResult.filename} with ${gptResult.changes.length} changes\n \`\`\`${gptResult.changed}\n\`\`\``,
+          context
+        );
+        await client.devboxes.writeFile(devbox.id!, {
+          file_path: currentWorkingDirectory + "/" + gptResult.filename,
+          contents: gptResult.changed!,
         });
+
+        // Run build
+        await ghPRComment(`Running \`npm run build\` 🏗️`, context);
+        const buildResult = await client.devboxes.executeSync(devbox.id!, {
+          command: `npm run build`,
+          shell_name: "bash",
+        });
+
+        if (buildResult.exit_status !== 0) {
+          await ghPRComment(
+            `Failed to build because of the following error: \n\`\`\`${buildResult.stdout}\`\`\``,
+            context
+          );
+        }
+
+        // Test Changes
+        await ghPRComment(`Running \`npm run test\` 🧪`, context);
+        const testResult = await client.devboxes.executeSync(devbox.id!, {
+          command: `npm run test`,
+          shell_name: "bash",
+        });
+        if (testResult.exit_status === 0) {
+          await ghPRComment(
+            `Changes applied successfully and tests passed!\n\`\`\`${testResult.stdout}\n\`\`\``,
+            context
+          );
+          // Report changes
+          gptResult.changes.forEach(async (change) => {
+            try {
+              await context.octokit.pulls.createReviewComment({
+                ...context.pullRequest(),
+                path: gptResult.filename,
+                commit_id: context.payload.pull_request.head.sha,
+                side: "RIGHT",
+                line: change.oldCodeLineStart,
+                body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
+              });
+            } catch (e) {
+              await ghPRComment(
+                `Failed to apply change because of the following error: \n\`\`\`${e}\n\`\`\``,
+                context
+              );
+              console.error("Error Applying Change:", e);
+            }
+          });
+        } else {
+          await ghPRComment(
+            `Changes failed to apply because of the following error: \n\`\`\`${result.stdout}\`\`\``,
+            context
+          );
+        }
       }
 
       await ghPRComment(`Done!`, context);

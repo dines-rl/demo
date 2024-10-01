@@ -211,14 +211,22 @@ export default (app: Probot) => {
       } else {
         gptResult.changes.forEach(async (change) => {
           console.log("Apply Change:", change);
-          await context.octokit.pulls.createReviewComment({
-            ...context.pullRequest(),
-            path: gptResult.filename,
-            commit_id: context.payload.pull_request.head.sha,
-            line: change.oldCodeLineStart,
-
-            body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
-          });
+          try {
+            await context.octokit.pulls.createReviewComment({
+              ...context.pullRequest(),
+              path: gptResult.filename,
+              commit_id: context.payload.pull_request.head.sha,
+              side: "RIGHT",
+              line: change.oldCodeLineStart,
+              body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
+            });
+          } catch (e) {
+            await ghPRComment(
+              `Failed to apply change because of the following error: \n\`\`\`${e}\`\`\``,
+              context
+            );
+            console.error("Error Applying Change:", e);
+          }
         });
       }
 

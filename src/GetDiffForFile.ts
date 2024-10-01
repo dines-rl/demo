@@ -12,8 +12,12 @@ const Change = z.object({
     description:
       "A longer description of the change. Suitable for an up to two to 8 sentence body explaining the reasoning behind the change.",
   }),
-  oldCode: z.string({ description: "The original code (before the change)." }),
-  newCode: z.string({ description: "The updated code (after the change)." }),
+  oldCode: z.string({
+    description: "The original code (before the change).",
+  }),
+  newCode: z.string({
+    description: "The updated code (after the change).",
+  }),
 });
 
 const CodeSuggestionsResult = z.object({
@@ -107,13 +111,16 @@ Make sure to output both files as requested.
 }
 
 // Helper function to determine the starting line number of the old code
-function determineLineStart(fullCode: string, oldCode: string): number {
+function determineLineStart(
+  fullCode: string,
+  oldCodeFullBlock: string
+): number {
+  const oldCodeFirstLine = oldCodeFullBlock.split("\n")[0];
   const lines = fullCode.split("\n");
-  const oldCodeLines = oldCode.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    if (lines.slice(i, i + oldCodeLines.length).join("\n") === oldCode) {
+    if (lines[i].includes(oldCodeFirstLine)) {
       return i + 1; // Line numbers are typically 1-based
     }
   }
-  return 0; // Return -1 if the old code is not found
+  return -1; // Return -1 if the old code is not found
 }

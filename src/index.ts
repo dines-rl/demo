@@ -1,6 +1,7 @@
 import { Probot, Context } from "probot";
 import { Runloop } from "@runloop/api-client";
 import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
+import { getSuggestionsFromGPT } from "./GetDiffForFile.js";
 
 const client = new Runloop({
   bearerToken: process.env.RUNLOOP_KEY || "",
@@ -28,7 +29,7 @@ export default (app: Probot) => {
             ...context.issue(),
             labels: [`devbox-${devboxID}`],
           });
-    
+
           await ghPRComment(
             `Your devbox \`${devboxID}\` has been deleted.`,
             context
@@ -42,15 +43,19 @@ export default (app: Probot) => {
           console.error("RunloopError:", e);
         }
       }
-    })
+    });
   });
 
-  app.on("pull_request.opened", (context) => { pullRequestOpened(context) });
+  app.on("pull_request.opened", (context) => {
+    pullRequestOpened(context);
+  });
 
-  app.on("pull_request.reopened", (context)=>{ pullRequestOpened(context) });
+  app.on("pull_request.reopened", (context) => {
+    pullRequestOpened(context);
+  });
 
-
-  async function pullRequestOpened (context: Context<"pull_request.opened"| "pull_request.reopened">
+  async function pullRequestOpened(
+    context: Context<"pull_request.opened" | "pull_request.reopened">
   ) {
     await ghPRComment(
       `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
@@ -59,11 +64,38 @@ export default (app: Probot) => {
 
     // Get the changed files under src folder
     const files = await context.octokit.pulls.listFiles({
-      ...context.issue(),
+      ...context.pullRequest(),
     });
-    files.data.filter((file) => file.filename.startsWith("src/"))
+    const srcFiles = files.data.filter((file) =>
+      file.filename.startsWith("src/")
+    );
 
-    await ghPRComment(`Files to Improve: ${files.data.map((file) => file.filename).join(", ")}`, context);
+    // if (srcFiles.length > 0) {
+    //   const file = srcFiles[0];
+    //   const fileContent = await context.octokit.repos.getContent({
+    //     ...context.repo(),
+    //     filename: file.filename,
+    //     mediaType: { format: "text" },
+    //   });
+    //   await ghPRComment(
+    //     `File ${file.filename} content: ` + fileContent.data,
+    //     context
+    //   );
+
+    //   // Get the contents of a specific file
+    //   getSuggestionsFromGPT(
+    //     srcFiles[0].filename,
+    //     fileContent.data as string,
+    //     context
+    //   );
+    // }
+
+    await ghPRComment(
+      `Files to Improve: ${srcFiles
+        .map((file) => "`" + file.filename + "`")
+        .join(", ")}`,
+      context
+    );
 
     try {
       let devbox = await client.devboxes.create({
@@ -85,7 +117,6 @@ export default (app: Probot) => {
         },
         setup_commands: [
           `echo 'Hello, World ${context.payload.pull_request.number}'`,
-          `git clone ${context.payload.repository.clone_url}`,
         ],
       });
 
@@ -98,17 +129,37 @@ export default (app: Probot) => {
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
       await ghPRComment(
-        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
+        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}). 
+        \n We will now check out your repository and run tests on it.`,
         context
       );
 
+      await ghPRComment(
+        `Checking out repository ${context.payload.repository.full_name}`,
+        context
+      );
       await client.devboxes.executeSync(devbox.id!, {
-        command: `echo "Hello, World $GITHUB_ISSUE_NUMBER"`,
+        command: `git clone ${context.payload.repository.clone_url}`,
         shell_name: "bash",
       });
 
       await client.devboxes.executeSync(devbox.id!, {
         command: `cd ${context.payload.repository.name}`,
+        shell_name: "bash",
+      });
+
+      let fileNameCommand = await client.devboxes.executeSync(devbox.id!, {
+        command: `pwd`,
+        shell_name: "bash",
+      });
+      const currentWorkingDirectory = fileNameCommand.stdout;
+
+      await ghPRComment(
+        `Checking out branch ${context.payload.pull_request.head.ref}`,
+        context
+      );
+      await client.devboxes.executeSync(devbox.id!, {
+        command: `git checkout ${context.payload.pull_request.head.ref}`,
         shell_name: "bash",
       });
 
@@ -128,8 +179,27 @@ export default (app: Probot) => {
       //);
 
       await ghPRComment(
-        `\#\#\# Test results
+        `\#\#\# Initial Test results
         \n\`\`\`${result.stdout}\`\`\``,
+        context
+      );
+
+      const absolutefilePath =
+        currentWorkingDirectory + "/" + srcFiles[0].filename;
+
+      await ghPRComment(`Reading filecontents: ${absolutefilePath}`, context);
+      const fileContents = await client.devboxes.readFileContents(devbox.id!, {
+        file_path: absolutefilePath,
+      });
+      await ghPRComment(`Contents: \n\`\`\`\n${fileContents}\n\'\'\'`, context);
+
+      const gptResult = await getSuggestionsFromGPT(
+        srcFiles[0].filename,
+        result.stdout as string,
+        { temperature: 0.5, max_tokens: 1000 }
+      );
+      await ghPRComment(
+        `GPT Suggestions: \n\`\`\`\n${gptResult}\n\'\'\'`,
         context
       );
     } catch (e) {
@@ -140,7 +210,7 @@ export default (app: Probot) => {
       console.error("RunloopError:", e);
       return;
     }
-  });
+  }
 };
 
 async function awaitCommandCompletion(
@@ -218,9 +288,19 @@ async function awaitDevboxReady(
 //   });
 // }
 
-async function ghPRComment(body: string, context: Context<"pull_request.opened" | "pull_request.reopened" | "pull_request.closed">) {
+async function ghPRComment(
+  body: string,
+  context: Context<
+    "pull_request.opened" | "pull_request.reopened" | "pull_request.closed"
+  >
+) {
   const actionDetails = context.pullRequest();
   return context.octokit.issues.createComment({
-    ...context.issue({ owner: actionDetails.owner, repo: actionDetails.repo, issue_number: actionDetails.pull_number, body: body }),
+    ...context.issue({
+      owner: actionDetails.owner,
+      repo: actionDetails.repo,
+      issue_number: actionDetails.pull_number,
+      body: body,
+    }),
   });
 }

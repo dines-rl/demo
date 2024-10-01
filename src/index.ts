@@ -129,13 +129,13 @@ export default (app: Probot) => {
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
       await ghPRComment(
-        `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}). 
+        `Devbox 🤖 created with ID: \`${devbox.id}\` is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}). 
         \n We will now check out your repository and run tests on it.`,
         context
       );
 
       await ghPRComment(
-        `Checking out repository ${context.payload.repository.full_name}`,
+        `Checking out repository \`${context.payload.repository.full_name}\``,
         context
       );
       await client.devboxes.executeSync(devbox.id!, {
@@ -163,13 +163,13 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      await ghPRComment(`Installing and building`, context);
-      await client.devboxes.executeSync(devbox.id!, {
-        command: `npm i && npm run build`,
-        shell_name: "bash",
-      });
+      // await ghPRComment(`Installing and building`, context);
+      // await client.devboxes.executeSync(devbox.id!, {
+      //   command: `npm i && npm run build`,
+      //   shell_name: "bash",
+      // });
 
-      await ghPRComment(`Running vite test`, context);
+      // await ghPRComment(`Running vite test`, context);
       // const result = //await awaitCommandCompletion(
       //   await client.devboxes.executeSync(devbox.id!, {
       //     command: `npm run test`,
@@ -187,7 +187,10 @@ export default (app: Probot) => {
       const absolutefilePath =
         currentWorkingDirectory + "/" + srcFiles[0].filename;
 
-      await ghPRComment(`Reading filecontents: ${absolutefilePath}`, context);
+      await ghPRComment(
+        `Reading filecontents: \`${absolutefilePath}\``,
+        context
+      );
       const fileContents = await client.devboxes.readFileContents(devbox.id!, {
         file_path: absolutefilePath,
       });
@@ -198,16 +201,45 @@ export default (app: Probot) => {
         fileContents,
         { temperature: 0.5, max_tokens: 1000 }
       );
-      await ghPRComment(
-        `### Bot 🤖 Suggestions 
-        We have generated some suggestions for you to improve the code:
+      //       await ghPRComment(
+      //         `### Bot Suggestions
+      // We have generated soem code changes for you to improve the code, these changes have beeen tested and are ready for you to review
 
-        \n\`\`\`\n${gptResult}\n\`\`\`
-        
-        What do you think, respond with your thoughts.
-        `,
+      // ${gptResult}
+
+      // What do you think, respond with your thoughts.
+      // `,
+      //         context
+      //       );
+      console.log("GPTResult:", gptResult);
+      await ghPRComment(
+        `### Original Response:\n${gptResult.original}`,
         context
       );
+      if (gptResult.changes.length === 0) {
+        await ghPRComment(
+          `Congradulations! No changes were suggested for the file ${gptResult.filename}`,
+          context
+        );
+      } else {
+        gptResult.changes.forEach(async (change) => {
+          console.log("Apply Change:", change);
+          if (change.newCode && change.lineStart && change.lineEnd) {
+            context.octokit.pulls.createReviewComment({
+              ...context.issue(),
+              start_line: change.lineStart,
+              side: "RIGHT",
+              start_side: "RIGHT",
+              end_line: change.lineEnd,
+              path: gptResult.filename,
+              body: `### Change Suggestion
+        \n\`\`\`${gptResult.changed}\`\`\``,
+            });
+          }
+        });
+      }
+
+      await ghPRComment(`Done!`, context);
     } catch (e) {
       await ghPRComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,

@@ -1,56 +1,72 @@
 import OpenAI from "openai";
 const openai = new OpenAI();
 
+type Changes = {
+  lineStart: number;
+  lineEnd: number;
+  shortDescription: string;
+  longDescription: string;
+  oldCode: string;
+  newCode: string;
+};
+
+type GPTResultingData = {
+  changes: Changes[];
+  changed?: string;
+  filename: string;
+  original: string;
+};
+
 // Get code improvements from GPT
 export async function getSuggestionsFromGPT(
-  fileName: string,
+  filename: string,
   code: string,
   {
     temperature = 0.5,
     max_tokens = 5000,
   }: { temperature: number; max_tokens: number }
-): Promise<string> {
+): Promise<GPTResultingData> {
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: `
-You are a code assistant tasked with improving the quality of the provided code. You will receive the entire content of a file, and your job is to review it, suggest improvements, and output a Git-style diff that reflects your changes. 
+          content: `### Prompt
 
-The improvements can include:
-- Fixing any syntax errors.
-- Refactoring code for better readability and maintainability.
-- Optimizing performance if applicable.
-- Ensuring modern best practices are followed.
-- Adding comments where necessary to clarify complex logic.
-- Ensuring proper variable/function naming conventions.
+\`\`\`plaintext
+You are a code assistant tasked with improving the quality of the provided code. You will receive a complete code file, and your job is to review it, suggest improvements, and output the changes.
+
+Your output must include two files:
+1. **changed**: The modified code file after applying your improvements.
+2. **changes.json**: A JSON file with the resulting data from the changes.
+   - **Line Start**: The starting line number of the change.
+   - **Line End**: The ending line number of the change.
+   - **Short Description**: A short description of the change.
+   - **Long Description**: A short description of the change.
+   - **Old Code**: The original code (before the change).
+   - **New Code**: The updated code (after the change).
 
 ### Instructions:
-1. **Analyze the code**: Understand the intent and function of the given code.
-2. **Suggest improvements**: Make necessary code improvements in readability, logic, syntax, or structure.
-3. **Output a Git diff**: Present the diff in a format similar to the output of a \`git diff\` command.
+1. Analyze the provided code.
+2. Suggest improvements and apply the changes.
+3. Generate the updated code in the \`changed\` file.
+4. Record the changes in \`changes.json\` with the proper format:
+   - **Line Start**: The starting line number of the change.
+   - **Line End**: The ending line number of the change.
+   - **Short Description**: A short explanation of what was changed and why.
+   - **Long Description**: A short explanation of what was changed and why.
+   - **Old Code**: The original code, formatted as a string.
+   - **New Code**: The updated code, formatted as a string.
 
-Here is the code you need to improve:
-
+Here is the original code file:
 \`\`\`
 ${code}
 \`\`\`
 
-Return the changes in the following format:
-
-\`\`\`
-diff --git a/${fileName} b/${fileName}
-index <index>..<index> <file_permissions>
---- a/${fileName}
-+++ b/${fileName}
-@@ <line_number> <line_number> @@
-- <original_code>
-+ <suggested_code>
+Make sure to output both files as requested.
 \`\`\`
 
-Please make sure that the diff clearly highlights what has changed between the original code and your suggested improvements.
 `,
         },
       ],
@@ -59,10 +75,12 @@ Please make sure that the diff clearly highlights what has changed between the o
       temperature: temperature,
     });
 
-    console.log("GPT Response:", JSON.stringify(completion, null, 4));
     const suggestions = completion.choices[0].message.content;
+    console.log("Suggestions from GPT:", suggestions);
     if (suggestions) {
-      return suggestions.trim();
+      const result = extractFromSuggestions(filename, suggestions);
+      console.log("Result:", result);
+      return result;
     } else {
       throw new Error("No suggestions received from GPT");
     }
@@ -72,32 +90,37 @@ Please make sure that the diff clearly highlights what has changed between the o
   }
 }
 
-// // Generate Git-like diff output between original and suggested code
-// function generateDiff(originalCode: string, suggestedCode: string): string {
-//   const patch = diff.createPatch("codefile", originalCode, suggestedCode);
-//   return patch;
-// }
+function extractFromSuggestions(
+  filename: string,
+  gptResponse: string
+): GPTResultingData {
+  // Regex for changed
+  const changedRegex = /```changed([\s\S]*?)```/;
+  const changesJsonRegex = /```changes\.json([\s\S]*?)```/;
 
-// // Main function to process the file and output the diff
-// async function processCodeFile(filePath: string) {
-//   try {
-//     const originalCode = await readCodeFile(filePath);
-//     const suggestedCode = await getSuggestionsFromGPT(originalCode);
+  // Extract changed code
+  const changedMatch = gptResponse.match(changedRegex);
+  const changedContent = changedMatch ? changedMatch[1].trim() : undefined;
 
-//     console.log("Original Code:\n", originalCode);
-//     console.log("\nSuggested Code:\n", suggestedCode);
+  // Extract changes.json
+  const changesJsonMatch = gptResponse.match(changesJsonRegex);
+  const changesJsonContent = changesJsonMatch
+    ? changesJsonMatch[1].trim()
+    : null;
 
-//     const diffOutput = generateDiff(originalCode, suggestedCode);
-//     console.log("\nGit Diff of Suggestions:\n", diffOutput);
-//   } catch (error) {
-//     console.error("Error processing code file:", error);
-//   }
-// // }
-
-// // Run the script with the code file path
-// const filePath = process.argv[2]; // Pass the file path as a command-line argument
-// if (filePath) {
-//   processCodeFile(filePath);
-// } else {
-//   console.error("Please provide a file path as a command-line argument.");
-// }
+  // Parse changes.json as JSON
+  let changesJsonObject: Changes[] = [];
+  if (changesJsonContent) {
+    try {
+      changesJsonObject = JSON.parse(changesJsonContent) as Changes[];
+    } catch (error) {
+      console.error("Error parsing changes.json:", error);
+    }
+  }
+  return {
+    filename,
+    changed: changedContent,
+    changes: changesJsonObject,
+    original: gptResponse,
+  };
+}

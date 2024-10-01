@@ -170,12 +170,10 @@ export default (app: Probot) => {
       });
 
       await ghPRComment(`Running vite test`, context);
-      const result = 
-        await client.devboxes.executeSync(devbox.id!, {
-          command: `npm run test`,
-          shell_name: "bash",
-        });
-      );
+      const result = await client.devboxes.executeSync(devbox.id!, {
+        command: `npm run test`,
+        shell_name: "bash",
+      });
 
       await ghPRComment(
         `\#\#\# Initial Test results

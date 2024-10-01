@@ -155,7 +155,7 @@ export default (app: Probot) => {
       const currentWorkingDirectory = fileNameCommand.stdout?.trim();
 
       await ghPRComment(
-        `Checking out branch ${context.payload.pull_request.head.ref}`,
+        `Checking out branch \`${context.payload.pull_request.head.ref}\``,
         context
       );
       await client.devboxes.executeSync(devbox.id!, {
@@ -163,26 +163,23 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      // await ghPRComment(`Installing and building`, context);
-      // await client.devboxes.executeSync(devbox.id!, {
-      //   command: `npm i && npm run build`,
-      //   shell_name: "bash",
-      // });
+      await ghPRComment(`Installing and building`, context);
+      await client.devboxes.executeSync(devbox.id!, {
+        command: `npm i && npm run build`,
+        shell_name: "bash",
+      });
 
-      // await ghPRComment(`Running vite test`, context);
-      // const result = //await awaitCommandCompletion(
-      //   await client.devboxes.executeSync(devbox.id!, {
-      //     command: `npm run test`,
-      //     shell_name: "bash",
-      //   });
-      // //context
-      //);
+      await ghPRComment(`Running vite test`, context);
+      const result = await client.devboxes.executeSync(devbox.id!, {
+        command: `npm run test`,
+        shell_name: "bash",
+      });
 
-      // await ghPRComment(
-      //   `\#\#\# Initial Test results
-      //   \n\`\`\`${result.stdout}\`\`\``,
-      //   context
-      // );
+      await ghPRComment(
+        `\#\#\# Initial Test results
+        \n\`\`\`${result.stdout}\`\`\``,
+        context
+      );
 
       const absolutefilePath =
         currentWorkingDirectory + "/" + srcFiles[0].filename;
@@ -201,6 +198,11 @@ export default (app: Probot) => {
         { temperature: 0.5 }
       );
 
+      await ghPRComment(
+        `GPT Responded with \`${gptResult.changes.length}\` changes!`,
+        context
+      );
+
       if (gptResult.changes.length === 0) {
         await ghPRComment(
           `Congradulations! No changes were suggested for the file ${gptResult.filename}`,
@@ -209,39 +211,22 @@ export default (app: Probot) => {
       } else {
         gptResult.changes.forEach(async (change) => {
           console.log("Apply Change:", change);
-          await context.octokit.pulls.createReviewComment({
-            ...context.pullRequest(),
-            path: gptResult.filename,
-            commit_id: context.payload.pull_request.head.sha,
-            start_line: change.lineStart,
-            start_side: "RIGHT",
-            body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\`\`\``,
-          });
-
-          // await context.octokit.pulls.createReview({
-          //   ...context.pullRequest(),
-          //   event: "COMMENT",
-          //   body: `## Issue: ${change.shortDescription}\n\n${change.longDescription}`,
-          //   comments: [
-          //     {
-          //       path: srcFiles[0].filename,
-          //       position: change.lineStart,
-          //       body: `### Suggested Change\n\`\`\`suggestion\n${change.newCode}\`\`\``,
-          //     },
-          //   ],
-          // });
-          // //   if (change.newCode && change.lineStart && change.lineEnd) {
-          //     context.octokit.pulls.createReviewComment({
-          //       ...context.issue(),
-          //       start_line: change.lineStart,
-          //       side: "RIGHT",
-          //       start_side: "RIGHT",
-          //       end_line: change.lineEnd,
-          //       path: gptResult.filename,
-          //       body: `### Change Suggestion
-          // \n\`\`\`${gptResult.changed}\`\`\``,
-          //     });
-          //   }
+          try {
+            await context.octokit.pulls.createReviewComment({
+              ...context.pullRequest(),
+              path: gptResult.filename,
+              commit_id: context.payload.pull_request.head.sha,
+              side: "RIGHT",
+              line: change.oldCodeLineStart,
+              body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\n\`\`\``,
+            });
+          } catch (e) {
+            await ghPRComment(
+              `Failed to apply change because of the following error: \n\`\`\`${e}\`\`\``,
+              context
+            );
+            console.error("Error Applying Change:", e);
+          }
         });
       }
 

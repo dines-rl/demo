@@ -29,7 +29,7 @@ The improvements can include:
 
 ### Instructions:
 1. **Analyze the code**: Understand the intent and function of the given code.
-2. **Suggest improvements**: Make necessary code improvements. 
+2. **Suggest improvements**: Make necessary code improvements in readability, logic, syntax, or structure.
 3. **Output a Git diff**: Present the diff in a format similar to the output of a \`git diff\` command.
 
 Here is the code you need to improve:

@@ -1,4 +1,4 @@
-import { Probot, Context } from "probot";
+import { Probot } from "probot";
 import { Runloop } from "@runloop/api-client";
 import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
 
@@ -9,12 +9,8 @@ client.bearerToken;
 console.log(`RLKEY (${client.bearerToken}):`, process.env.RUNLOOP_KEY);
 
 export default (app: Probot) => {
-  app.on("pull_request.closed", async (context) => {
-    context.octokit.pulls.createReviewComment({
-      ...context.pullRequest(),
-      body: "Thanks for closing this PR!",
-    });
-    ghPRComment(
+  app.on("issues.closed", async (context) => {
+    ghIssueComment(
       `Thanks for closing this issue! I will now delete the devbox associated with it.`,
       context
     );
@@ -34,19 +30,19 @@ export default (app: Probot) => {
         console.log("Devbox ID:", devboxID); // Outputs: Devbox ID: 12345
         if (devboxID) {
           try {
-            await ghPRComment(
+            await ghIssueComment(
               `Your devbox \`${devboxID}\` is being deleted.`,
               context
             );
             await client.devboxes.shutdown(devboxID);
 
-            await ghPRComment(
+            await ghIssueComment(
               `Your devbox \`${devboxID}\` has been deleted.`,
               context
             );
             console.log(`Devbox 🤖 with ID: [${devboxID}] deleted`);
           } catch (e) {
-            ghPRComment(
+            ghIssueComment(
               `Your devbox \`${devboxID}\` failed to delete because of the following error: \n\`\`\`${e}\`\`\``,
               context
             );
@@ -57,38 +53,31 @@ export default (app: Probot) => {
     });
   });
 
-  app.on("pull_request.opened", (context) => { pullRequestOpened(context) });
-
-  app.on("pull_request.reopened", (context)=>{ pullRequestOpened(context) });
-
-
-  async function pullRequestOpened (context: Context<"pull_request.opened"| "pull_request.reopened">
-  ) {
-    await ghPRComment(
+  app.on("issues.opened", async (context) => {
+    await ghIssueComment(
       `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
       context
     );
 
     try {
       let devbox = await client.devboxes.create({
-        name: `PR-${context.payload.pull_request.number}`,
+        name: `Issue-${context.payload.issue.number}`,
         launch_parameters: {
           keep_alive_time_seconds: 100 * 60,
         },
         environment_variables: {
-          GITHUB_PR_NUMBER: context.payload.pull_request.number.toString(),
-          GITHUB_PR_URL: context.payload.pull_request.html_url,
+          GITHUB_ISSUE_NUMBER: context.payload.issue.number.toString(),
+          GITHUB_ISSUE_URL: context.payload.issue.html_url,
         },
         metadata: {
-          github_pr_number: context.payload.pull_request.number.toString(),
-          github_pr_url: context.payload.pull_request.html_url,
-          github_pr_title: context.payload.pull_request.title,
-          github_pr_owner: context.payload.repository.owner.login,
+          github_issue_number: context.payload.issue.number.toString(),
+          github_issue_url: context.payload.issue.html_url,
+          github_issue_title: context.payload.issue.title,
           owner: context.payload.repository.owner.login,
           repo: context.payload.repository.name,
         },
         setup_commands: [
-          `echo 'Hello, World ${context.payload.pull_request.number}'`,
+          `echo 'Hello, World ${context.payload.issue.number}'`,
           `git clone ${context.payload.repository.clone_url}`,
         ],
       });
@@ -101,7 +90,7 @@ export default (app: Probot) => {
 
       await awaitDevboxReady(devbox.id!, context, 10, 1000);
 
-      await ghPRComment(
+      await ghIssueComment(
         `Devbox 🤖 created with ID: [${devbox.id}] is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}), enjoy!\nAttempting to put the code on it.`,
         context
       );
@@ -116,13 +105,13 @@ export default (app: Probot) => {
         shell_name: "bash",
       });
 
-      await ghPRComment(`Installing and building`, context);
+      await ghIssueComment(`Installing and building`, context);
       await client.devboxes.executeSync(devbox.id!, {
         command: `npm i && npm run build`,
         shell_name: "bash",
       });
 
-      await ghPRComment(`Running vite test`, context);
+      await ghIssueComment(`Running vite test`, context);
       const result = //await awaitCommandCompletion(
         await client.devboxes.executeSync(devbox.id!, {
           command: `npm run test`,
@@ -131,13 +120,13 @@ export default (app: Probot) => {
       //context
       //);
 
-      await ghPRComment(
+      await ghIssueComment(
         `\#\#\# Test results
         \n\`\`\`${result.stdout}\`\`\``,
         context
       );
     } catch (e) {
-      await ghPRComment(
+      await ghIssueComment(
         `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,
         context
       );
@@ -162,7 +151,7 @@ async function awaitCommandCompletion(
         execution_id!
       );
 
-      await ghPRComment(
+      await ghIssueComment(
         `Command ${execution_id} status: ${command.status} exit: ${
           command.exit_status
         } attempt: ${attempts + 1}: \n\`\`\`${command.stdout}\`\`\``,
@@ -174,7 +163,7 @@ async function awaitCommandCompletion(
       attempts++;
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     } catch (e) {
-      await ghPRComment(
+      await ghIssueComment(
         `Command (${execution_id}) failed because of the following error: \n\`\`\`${e}\`\`\``,
         context
       );
@@ -203,7 +192,7 @@ async function awaitDevboxReady(
       return devbox;
     }
 
-    await ghPRComment(
+    await ghIssueComment(
       `Awaiting Devbox status: ${devbox.status} attempt: ${attempts + 1}`,
       context
     );
@@ -215,9 +204,9 @@ async function awaitDevboxReady(
   );
 }
 
-async function ghPRComment(body: string, context: any) {
-  return context.octokit.pulls.createReviewComment({
-    ...context.pull_request,
+async function ghIssueComment(body: string, context: any) {
+  return context.octokit.issues.createComment({
+    ...context.issue({ body: body }),
     body,
   });
 }

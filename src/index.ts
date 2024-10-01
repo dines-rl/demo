@@ -194,28 +194,13 @@ export default (app: Probot) => {
       const fileContents = await client.devboxes.readFileContents(devbox.id!, {
         file_path: absolutefilePath,
       });
-      //await ghPRComment(`Contents: \n\`\`\`\n${fileContents}\n\`\`\``, context);
 
       const gptResult = await getSuggestionsFromGPT(
         srcFiles[0].filename,
         fileContents,
-        { temperature: 0.5, max_tokens: 1000 }
+        { temperature: 0.5 }
       );
-      //       await ghPRComment(
-      //         `### Bot Suggestions
-      // We have generated soem code changes for you to improve the code, these changes have beeen tested and are ready for you to review
 
-      // ${gptResult}
-
-      // What do you think, respond with your thoughts.
-      // `,
-      //         context
-      //       );
-      console.log("GPTResult:", gptResult);
-      await ghPRComment(
-        `### Original Response:\n${gptResult.original}`,
-        context
-      );
       if (gptResult.changes.length === 0) {
         await ghPRComment(
           `Congradulations! No changes were suggested for the file ${gptResult.filename}`,
@@ -224,18 +209,39 @@ export default (app: Probot) => {
       } else {
         gptResult.changes.forEach(async (change) => {
           console.log("Apply Change:", change);
-          if (change.newCode && change.lineStart && change.lineEnd) {
-            context.octokit.pulls.createReviewComment({
-              ...context.issue(),
-              start_line: change.lineStart,
-              side: "RIGHT",
-              start_side: "RIGHT",
-              end_line: change.lineEnd,
-              path: gptResult.filename,
-              body: `### Change Suggestion
-        \n\`\`\`${gptResult.changed}\`\`\``,
-            });
-          }
+          await context.octokit.pulls.createReviewComment({
+            ...context.pullRequest(),
+            path: gptResult.filename,
+            commit_id: context.payload.pull_request.head.sha,
+            start_line: change.lineStart,
+            start_side: "RIGHT",
+            body: `### ${change.shortDescription}\n${change.longDescription} \n\`\`\`suggestion\n${change.newCode}\`\`\``,
+          });
+
+          // await context.octokit.pulls.createReview({
+          //   ...context.pullRequest(),
+          //   event: "COMMENT",
+          //   body: `## Issue: ${change.shortDescription}\n\n${change.longDescription}`,
+          //   comments: [
+          //     {
+          //       path: srcFiles[0].filename,
+          //       position: change.lineStart,
+          //       body: `### Suggested Change\n\`\`\`suggestion\n${change.newCode}\`\`\``,
+          //     },
+          //   ],
+          // });
+          // //   if (change.newCode && change.lineStart && change.lineEnd) {
+          //     context.octokit.pulls.createReviewComment({
+          //       ...context.issue(),
+          //       start_line: change.lineStart,
+          //       side: "RIGHT",
+          //       start_side: "RIGHT",
+          //       end_line: change.lineEnd,
+          //       path: gptResult.filename,
+          //       body: `### Change Suggestion
+          // \n\`\`\`${gptResult.changed}\`\`\``,
+          //     });
+          //   }
         });
       }
 

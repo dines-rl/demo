@@ -2,6 +2,7 @@ import { Probot, Context } from "probot";
 import { Runloop } from "@runloop/api-client";
 import { DevboxAsyncExecutionDetailView } from "@runloop/api-client/src/resources/index.js";
 import { getSuggestionsFromGPT } from "./GetDiffForFile.js";
+import { set } from "zod";
 
 const client = new Runloop({
   bearerToken: process.env.RUNLOOP_KEY || "",
@@ -57,10 +58,13 @@ export default (app: Probot) => {
   async function pullRequestOpened(
     context: Context<"pull_request.opened" | "pull_request.reopened">
   ) {
-    await ghPRComment(
-      `Thanks for opening this issue! I will now create a devbox for you to operate on the code.`,
+    const statusBanner = await new ghPRBanner(
+      "# PR Fixer 🤖",
+      "Thanks for opening this issue! I will now create a devbox for you to operate on the code.",
       context
-    );
+    ).start();
+
+    // Get the diff for the PR
 
     // Get the changed files under src folder
     const files = await context.octokit.pulls.listFiles({
@@ -70,34 +74,17 @@ export default (app: Probot) => {
       file.filename.startsWith("src/")
     );
 
-    // if (srcFiles.length > 0) {
-    //   const file = srcFiles[0];
-    //   const fileContent = await context.octokit.repos.getContent({
-    //     ...context.repo(),
-    //     filename: file.filename,
-    //     mediaType: { format: "text" },
-    //   });
-    //   await ghPRComment(
-    //     `File ${file.filename} content: ` + fileContent.data,
-    //     context
-    //   );
-
-    //   // Get the contents of a specific file
-    //   getSuggestionsFromGPT(
-    //     srcFiles[0].filename,
-    //     fileContent.data as string,
-    //     context
-    //   );
-    // }
-
-    await ghPRComment(
-      `Files to Improve: ${srcFiles
-        .map((file) => "`" + file.filename + "`")
-        .join(", ")}`,
-      context
+    // srcFiles.forEach(async (file) => {
+    //file.patch
+    // })
+    statusBanner.setStatusMessage(
+      `Found Files to Improve:\n ${srcFiles
+        .map((file) => "- `" + file.filename + "`")
+        .join(",\n")}`
     );
 
     try {
+      statusBanner.setStatusMessage(`Starting Devbox 💻`);
       let devbox = await client.devboxes.create({
         name: `PR-${context.payload.pull_request.number}`,
         launch_parameters: {
@@ -119,34 +106,38 @@ export default (app: Probot) => {
           `echo 'Hello, World ${context.payload.pull_request.number}'`,
         ],
       });
-
+      statusBanner.setStatusMessage(
+        `Associating Devbox with PR label ${`devbox-${devbox.id}`}`
+      );
       // Add a label to the issue
       await context.octokit.issues.addLabels({
         ...context.issue(),
         labels: [`devbox-${devbox.id}`, "runloop"],
       });
 
-      await awaitDevboxReady(devbox.id!, context, 10, 1000);
+      await awaitDevboxReady(statusBanner, devbox.id!, 10, 1000);
 
-      await ghPRComment(
-        `Devbox 🤖 created with ID: \`${devbox.id}\` is ready at [view devbox](https://platform.runloop.ai/devboxes/${devbox.id}). 
-        \n We will now check out your repository and run tests on it.`,
-        context
+      statusBanner.setTitleMessage(
+        `# PR Fixer 🤖 /w [Devbox ${devbox.id}](https://platform.runloop.ai/devboxes/${devbox.id})`
       );
-
-      await ghPRComment(
-        `Checking out repository \`${context.payload.repository.full_name}\``,
-        context
-      );
+      statusBanner.setStatusMessage(`Devbox 🤖 created with ID: \`${devbox.id}\` is ready at [view on platform.runloop.ai](https://platform.runloop.ai/devboxes/${devbox.id}). 
+        \nWe will now check out your repository and run tests on it.`);
       await client.devboxes.executeSync(devbox.id!, {
         command: `git clone ${context.payload.repository.clone_url}`,
         shell_name: "bash",
       });
+      statusBanner.setStatusMessage(
+        `Checking out repository \`${context.payload.repository.full_name}\``
+      );
 
       await client.devboxes.executeSync(devbox.id!, {
         command: `cd ${context.payload.repository.name}`,
         shell_name: "bash",
       });
+
+      statusBanner.setStatusMessage(
+        `Moving to \`${context.payload.repository.full_name}\` directory`
+      );
 
       let fileNameCommand = await client.devboxes.executeSync(devbox.id!, {
         command: `pwd`,
@@ -154,22 +145,21 @@ export default (app: Probot) => {
       });
       const currentWorkingDirectory = fileNameCommand.stdout?.trim();
 
-      await ghPRComment(
-        `Checking out branch \`${context.payload.pull_request.head.ref}\``,
-        context
+      statusBanner.setStatusMessage(
+        `Checking out branch \`${context.payload.pull_request.head.ref}\``
       );
       await client.devboxes.executeSync(devbox.id!, {
         command: `git checkout ${context.payload.pull_request.head.ref}`,
         shell_name: "bash",
       });
 
-      await ghPRComment(`Installing and building the repo`, context);
+      statusBanner.setStatusMessage(`Npm Installing and building the repo`);
       await client.devboxes.executeSync(devbox.id!, {
         command: `npm i && npm run build`,
         shell_name: "bash",
       });
 
-      await ghPRComment(`Running control vite test`, context);
+      statusBanner.setStatusMessage(`Running Control \`npm run test\` 🧪`);
       const result = await client.devboxes.executeSync(devbox.id!, {
         command: `npm run test`,
         shell_name: "bash",
@@ -242,7 +232,7 @@ export default (app: Probot) => {
         });
         if (testResult.exit_status === 0) {
           await ghPRComment(
-            `Changes applied successfully and tests passed!\n\`\`\`${testResult.stdout}\n\`\`\``,
+            `Changes applied successfully and tests passed!\n\`\`\`\n${testResult.stdout}\n\`\`\``,
             context
           );
           // Report changes
@@ -258,7 +248,7 @@ export default (app: Probot) => {
               });
             } catch (e) {
               await ghPRComment(
-                `Failed to apply change because of the following error: \n\`\`\`${e}\n\`\`\``,
+                `Failed to apply change because of the following error: \n\`\`\`\n${e}\n\`\`\``,
                 context
               );
               console.error("Error Applying Change:", e);
@@ -266,7 +256,7 @@ export default (app: Probot) => {
           });
         } else {
           await ghPRComment(
-            `Changes failed to apply because of the following error: \n\`\`\`${result.stdout}\n\`\`\``,
+            `Changes failed to apply because of the following error: \n\`\`\`\n${result.stdout}\n\`\`\``,
             context
           );
         }
@@ -275,7 +265,7 @@ export default (app: Probot) => {
       await ghPRComment(`Done!`, context);
     } catch (e) {
       await ghPRComment(
-        `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\n\`\`\``,
+        `Your devbox failed to start becasue of the following error: \n\`\`\`\n${e}\n\`\`\``,
         context
       );
       console.error("RunloopError:", e);
@@ -325,9 +315,9 @@ async function awaitCommandCompletion(
 }
 
 async function awaitDevboxReady(
+  statusBanner: ghPRBanner,
   devboxID: string,
-  context: any,
-  maxAttempts = 10,
+  maxAttempts = 100,
   pollInterval = 1000
 ) {
   let devbox;
@@ -339,10 +329,8 @@ async function awaitDevboxReady(
       console.log(`Devbox ${devboxID} is running`);
       return devbox;
     }
-
-    await ghPRComment(
-      `Awaiting Devbox status: ${devbox.status} attempt: ${attempts + 1}`,
-      context
+    statusBanner.setStatusMessage(
+      `Awaiting Devbox status: ${devbox.status} attempt: ${attempts + 1}`
     );
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -352,26 +340,124 @@ async function awaitDevboxReady(
   );
 }
 
-// async function ghPRComment(body: string, context: Context<"pull_request">) {
-//   return context.octokit.pulls.createReviewComment({
-//     ...context.p,
-//     body,
-//   });
-// }
-
 async function ghPRComment(
   body: string,
   context: Context<
     "pull_request.opened" | "pull_request.reopened" | "pull_request.closed"
-  >
+  >,
+  existingPRCommentID?: number
 ) {
   const actionDetails = context.pullRequest();
-  return context.octokit.issues.createComment({
-    ...context.issue({
+  if (existingPRCommentID) {
+    return context.octokit.issues.updateComment({
+      ...context.issue(),
       owner: actionDetails.owner,
       repo: actionDetails.repo,
       issue_number: actionDetails.pull_number,
       body: body,
-    }),
-  });
+      comment_id: existingPRCommentID,
+    });
+  } else {
+    return context.octokit.issues.createComment({
+      ...context.issue({
+        owner: actionDetails.owner,
+        repo: actionDetails.repo,
+        issue_number: actionDetails.pull_number,
+        body: body,
+      }),
+    });
+  }
+}
+
+type ContextType = Context<"pull_request.opened" | "pull_request.reopened">;
+class ghPRBanner {
+  updateIntervalMs: number = 3000;
+  lastMessageId?: number;
+  titleMessage: string = "";
+  statusMessage: string = "";
+  context: ContextType;
+  dirty: boolean = true;
+  minNumberOfLines: number = 10;
+  lastLines: string[] = [];
+  dotNum = 0;
+
+  constructor(
+    titleMessage: string,
+    statusMessage: string,
+    context: ContextType
+  ) {
+    this.context = context;
+    this.titleMessage = titleMessage;
+    this.statusMessage = statusMessage;
+  }
+
+  async start() {
+    setTimeout(() => {
+      this.checkUpdate();
+    }, this.updateIntervalMs);
+    return this;
+  }
+
+  setTitleMessage(title: string) {
+    this.titleMessage = title;
+    this.dirty = true;
+  }
+
+  setStatusMessage(message: string) {
+    if (this.statusMessage) {
+      const firstLine = this.statusMessage.split("\n")[0];
+      this.lastLines.push("> " + firstLine + "\n");
+      if (this.lastLines.length > this.minNumberOfLines) {
+        this.lastLines.shift();
+      }
+    }
+    this.statusMessage = message;
+    this.dirty = true;
+  }
+
+  async checkUpdate() {
+    const timeStart = new Date().getTime();
+    console.log(`Running ${timeStart}`);
+    let timeEnd = timeStart;
+    try {
+      //if (this.dirty) {
+      const lastLinesString = this.lastLines.join("\n");
+      this.dirty = false;
+      let totalMessage = this.titleMessage + `\n\n`;
+      const dotNumString =
+        this.dotNum++ % 4 === 0 ? "" : ".".repeat(this.dotNum % 4);
+
+      // Check if total message has min number of lines
+      if (this.lastLines.length < this.minNumberOfLines) {
+        for (
+          let i = 0;
+          i < this.minNumberOfLines - this.lastLines.length;
+          i++
+        ) {
+          totalMessage += "\n>‎ ";
+        }
+      }
+      totalMessage +=
+        lastLinesString + `\n` + "### " + this.statusMessage + dotNumString;
+      totalMessage += "\n[runloop.ai](runloop.ai)";
+      const result = await ghPRComment(
+        totalMessage,
+        this.context,
+        this.lastMessageId
+      );
+      timeEnd = new Date().getTime();
+      console.log("Last Message ID:", result.data.id);
+      if (this.lastMessageId === undefined) {
+        this.lastMessageId = result.data.id;
+      }
+      //   }
+    } catch (e) {
+      console.error("Error during checkUpdate:", e);
+    }
+
+    setTimeout(
+      this.checkUpdate.bind(this),
+      this.updateIntervalMs - Math.min(timeEnd - timeStart, 0)
+    );
+  }
 }

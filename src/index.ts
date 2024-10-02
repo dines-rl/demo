@@ -266,7 +266,7 @@ export default (app: Probot) => {
           });
         } else {
           await ghPRComment(
-            `Changes failed to apply because of the following error: \n\`\`\`${result.stdout}\`\`\``,
+            `Changes failed to apply because of the following error: \n\`\`\`${result.stdout}\n\`\`\``,
             context
           );
         }
@@ -275,7 +275,7 @@ export default (app: Probot) => {
       await ghPRComment(`Done!`, context);
     } catch (e) {
       await ghPRComment(
-        `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\`\`\``,
+        `Your devbox failed to start becasue of the following error: \n\`\`\`${e}\n\`\`\``,
         context
       );
       console.error("RunloopError:", e);

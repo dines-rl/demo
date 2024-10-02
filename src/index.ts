@@ -62,6 +62,8 @@ export default (app: Probot) => {
       context
     );
 
+    // Get the diff for the PR
+
     // Get the changed files under src folder
     const files = await context.octokit.pulls.listFiles({
       ...context.pullRequest(),
@@ -70,25 +72,9 @@ export default (app: Probot) => {
       file.filename.startsWith("src/")
     );
 
-    // if (srcFiles.length > 0) {
-    //   const file = srcFiles[0];
-    //   const fileContent = await context.octokit.repos.getContent({
-    //     ...context.repo(),
-    //     filename: file.filename,
-    //     mediaType: { format: "text" },
-    //   });
-    //   await ghPRComment(
-    //     `File ${file.filename} content: ` + fileContent.data,
-    //     context
-    //   );
-
-    //   // Get the contents of a specific file
-    //   getSuggestionsFromGPT(
-    //     srcFiles[0].filename,
-    //     fileContent.data as string,
-    //     context
-    //   );
-    // }
+    // srcFiles.forEach(async (file) => {
+    //file.patch
+    // })
 
     await ghPRComment(
       `Files to Improve: ${srcFiles
@@ -332,6 +318,7 @@ async function awaitDevboxReady(
 ) {
   let devbox;
   let attempts = 0;
+  let lastCommentId;
   while (attempts < maxAttempts) {
     devbox = await client.devboxes.retrieve(devboxID);
     console.log(`Devbox ${devboxID} status: ${devbox.status}`);
@@ -340,10 +327,12 @@ async function awaitDevboxReady(
       return devbox;
     }
 
-    await ghPRComment(
+    const commentResult = await ghPRComment(
       `Awaiting Devbox status: ${devbox.status} attempt: ${attempts + 1}`,
-      context
+      context,
+      lastCommentId
     );
+    lastCommentId = commentResult.data.id;
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
@@ -363,15 +352,27 @@ async function ghPRComment(
   body: string,
   context: Context<
     "pull_request.opened" | "pull_request.reopened" | "pull_request.closed"
-  >
+  >,
+  existingPRCommentID?: number
 ) {
   const actionDetails = context.pullRequest();
-  return context.octokit.issues.createComment({
-    ...context.issue({
+  if (existingPRCommentID) {
+    return context.octokit.issues.updateComment({
+      ...context.issue(),
       owner: actionDetails.owner,
       repo: actionDetails.repo,
       issue_number: actionDetails.pull_number,
+      comment_id: existingPRCommentID,
       body: body,
-    }),
-  });
+    });
+  } else {
+    return context.octokit.issues.createComment({
+      ...context.issue({
+        owner: actionDetails.owner,
+        repo: actionDetails.repo,
+        issue_number: actionDetails.pull_number,
+        body: body,
+      }),
+    });
+  }
 }

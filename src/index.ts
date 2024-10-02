@@ -197,8 +197,8 @@ export default (app: Probot) => {
       await ghPRComment(
         `GPT Responded with \`${
           gptResult.changes.length
-        }\` changes! \n \`\`\`${gptResult.changes.map((change) => {
-          return change.shortDescription;
+        }\` changes! \n \`\`\`\n${gptResult.changes.map((change) => {
+          return `// ${change.shortDescription} - ${change.longDescription}\n${change.newCode}\n`;
         })}\n\`\`\``,
         context
       );

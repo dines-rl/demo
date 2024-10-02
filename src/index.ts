@@ -231,6 +231,7 @@ export default (app: Probot) => {
             `Failed to build because of the following error: \n\`\`\`${buildResult.stdout}\`\`\``,
             context
           );
+          return;
         }
 
         // Test Changes
